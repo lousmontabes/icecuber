@@ -273,7 +273,7 @@
                 const touchX = e.touches[0].clientX;
                 const deltaX = touchX - touchStartX;
                 if (Math.abs(deltaX) > 20) { // threshold for swipe
-                    if (deltaX > 0) {
+                    if (deltaX < 0) {
                         cameraAngle += Math.PI / 32;
                     } else {
                         cameraAngle -= Math.PI / 32;
