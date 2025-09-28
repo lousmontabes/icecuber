@@ -131,12 +131,17 @@
 
         function fadeOutCube(cube, callback) {
             let opacity = cube.material.opacity;
+            let y = cube.position.y;
             const fadeSpeed = 0.05;
+            const fallSpeed = 0.1;
             function fade() {
                 opacity -= fadeSpeed;
+                y -= fallSpeed;
+                cube.position.y = y;
                 if (opacity <= 0) {
                     cube.visible = false;
                     cube.material.opacity = 1; // Reset for future use
+                    cube.position.y = cellSize * 1.5; // Reset position for future use
                     // Remove from cubeGrid so selectability updates
                     cubeGrid[cube.userData.x][cube.userData.z] = undefined;
                     updateCamera(); // Update camera position in real time
@@ -317,17 +322,29 @@
             return Math.floor(gridSizeZ / 2); // fallback: center
         }
 
+        // Camera smooth movement state
+        let cameraTargetZ = getFurthestRowWithEmpty();
+        let cameraCurrentZ = cameraTargetZ;
+
         function updateCamera() {
             // Center camera on furthest row with empty blocks
-            const targetZ = getFurthestRowWithEmpty();
+            cameraTargetZ = getFurthestRowWithEmpty();
+        }
+
+        // Render loop
+        function animate() {
+            // Smoothly interpolate cameraCurrentZ toward cameraTargetZ
+            cameraCurrentZ += (cameraTargetZ - cameraCurrentZ) * 0.1;
             camera.position.set(
                 Math.sin(cameraAngle) * cameraRadius,
                 20,
-                Math.cos(cameraAngle) * cameraRadius + (targetZ - gridSizeZ / 2) * cellSize
+                Math.cos(cameraAngle) * cameraRadius + (cameraCurrentZ - gridSizeZ / 2) * cellSize
             );
-            camera.lookAt(0, 0, (targetZ - gridSizeZ / 2) * cellSize);
+            camera.lookAt(0, 0, (cameraCurrentZ - gridSizeZ / 2) * cellSize);
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);
         }
-        updateCamera();
+        animate();
 
         window.addEventListener('keydown', (e) => {
             if (e.key === 'ArrowLeft') {
@@ -378,13 +395,6 @@
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
-
-        // Render loop
-        function animate() {
-            renderer.render(scene, camera);
-            requestAnimationFrame(animate);
-        }
-        animate();
     </script>
 </body>
 
