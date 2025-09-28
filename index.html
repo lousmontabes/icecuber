@@ -139,6 +139,7 @@
                     cube.material.opacity = 1; // Reset for future use
                     // Remove from cubeGrid so selectability updates
                     cubeGrid[cube.userData.x][cube.userData.z] = undefined;
+                    updateCamera(); // Update camera position in real time
                     if (callback) callback();
                 } else {
                     cube.material.transparent = true;
@@ -291,15 +292,40 @@
         });
 
         // Camera rotation
-        let cameraAngle = Math.PI / 4; // 45 degrees
+        let cameraAngle;
         const cameraRadius = 28;
+        // Set default rotation to look toward the row with initially empty blocks
+        const initialEmptyRow = (() => {
+            for (let z = gridSizeZ - 1; z >= 0; z--) {
+                for (let x = 0; x < gridSizeX; x++) {
+                    if (!cubeGrid[x][z]) return z;
+                }
+            }
+            return Math.floor(gridSizeZ / 2);
+        })();
+        // Calculate angle so camera looks toward the initial empty row, with a slight angle to the left
+        cameraAngle = Math.atan2(0, (initialEmptyRow - gridSizeZ / 2) * cellSize + 1) - Math.PI / 12;
+        function getFurthestRowWithEmpty() {
+            // Find the furthest z (highest z) with at least one empty block
+            for (let z = gridSizeZ - 1; z >= 0; z--) {
+                for (let x = 0; x < gridSizeX; x++) {
+                    if (!cubeGrid[x][z]) {
+                        return z;
+                    }
+                }
+            }
+            return Math.floor(gridSizeZ / 2); // fallback: center
+        }
+
         function updateCamera() {
+            // Center camera on furthest row with empty blocks
+            const targetZ = getFurthestRowWithEmpty();
             camera.position.set(
                 Math.sin(cameraAngle) * cameraRadius,
                 20,
-                Math.cos(cameraAngle) * cameraRadius
+                Math.cos(cameraAngle) * cameraRadius + (targetZ - gridSizeZ / 2) * cellSize
             );
-            camera.lookAt(0, 0, 0);
+            camera.lookAt(0, 0, (targetZ - gridSizeZ / 2) * cellSize);
         }
         updateCamera();
 
