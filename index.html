@@ -8,6 +8,7 @@
         body {
             margin: 0;
             overflow: hidden;
+            background: url('assets/bg.jpg') center center / cover no-repeat fixed;
         }
 
         canvas {
@@ -22,7 +23,11 @@
     <script>
         // Scene setup
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xf0f0f0);
+        // Set scene background to bg.jpg
+        const loader = new THREE.TextureLoader();
+        loader.load('assets/bg.jpg', function (texture) {
+            scene.background = texture;
+        });
 
         // Camera setup (45 degree angle)
         const aspect = window.innerWidth / window.innerHeight;
@@ -34,7 +39,8 @@
         camera.lookAt(0, 0, 0);
 
         // Renderer
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setClearColor(0x000000, 0); // transparent background
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
