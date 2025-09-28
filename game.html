@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Three.js Color Grid Game</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+        }
+    </style>
+    <!-- Three.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
+</head>
+
+<body>
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf0f0f0);
+
+        // Camera setup (45 degree angle)
+        const aspect = window.innerWidth / window.innerHeight;
+        const d = 20;
+        const camera = new THREE.OrthographicCamera(
+            -d * aspect, d * aspect, d, -d, 1, 1000
+        );
+        camera.position.set(20, 20, 20); // 45 degree angle
+        camera.lookAt(0, 0, 0);
+
+        // Renderer
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Grid parameters
+        const gridSizeX = 10;
+        const gridSizeZ = 20;
+        const cellSize = 2;
+        // Five icy blue shades
+        const colors = [0xb3e6ff, 0x99d6ea, 0x80c6d4, 0x66b6bf, 0x4da6aa];
+
+        // Store elevated cubes for interaction
+        const elevatedCubes = [];
+        const cubeGrid = Array.from({ length: gridSizeX }, () => Array(gridSizeZ));
+        for (let x = 0; x < gridSizeX; x++) {
+            for (let z = 0; z < gridSizeZ; z++) {
+                const geometry = new THREE.BoxGeometry(cellSize, cellSize, cellSize);
+                const color = colors[Math.floor(Math.random() * colors.length)];
+                // Use MeshPhongMaterial for proper opacity fading
+                const material = new THREE.MeshPhongMaterial({ color, transparent: true, opacity: 1 });
+                const cube = new THREE.Mesh(geometry, material);
+                cube.position.set(
+                    (x - gridSizeX / 2 + 0.5) * cellSize,
+                    cellSize * 1.5,
+                    (z - gridSizeZ / 2 + 0.5) * cellSize
+                );
+                cube.userData = { x, z, color };
+                scene.add(cube);
+                elevatedCubes.push(cube);
+                cubeGrid[x][z] = cube;
+            }
+        }
+
+        // Add a shadow-receiving ground plane
+        const groundGeometry = new THREE.PlaneGeometry(gridSizeX * cellSize, gridSizeZ * cellSize);
+        const groundMaterial = new THREE.MeshPhongMaterial({ color: 0x888888, side: THREE.DoubleSide }); // grey
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = 0;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        directionalLight.position.set(20, 40, 20);
+        scene.add(directionalLight);
+
+        // Raycaster for mouse interaction
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        let selectedCube = null;
+        let selectedStroke = null;
+
+        function highlightCube(cube) {
+            // Remove previous stroke
+            if (selectedStroke) {
+                scene.remove(selectedStroke);
+                selectedStroke = null;
+            }
+            // Add stroke to selected cube
+            const geometry = cube.geometry;
+            const edges = new THREE.EdgesGeometry(geometry);
+            const stroke = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xff4444, linewidth: 4 }));
+            stroke.position.copy(cube.position);
+            stroke.position.y += 0.01;
+            scene.add(stroke);
+            selectedStroke = stroke;
+        }
+
+        function removeStroke() {
+            if (selectedStroke) {
+                scene.remove(selectedStroke);
+                selectedStroke = null;
+            }
+        }
+
+        function fadeOutCube(cube, callback) {
+            let opacity = cube.material.opacity;
+            const fadeSpeed = 0.05;
+            function fade() {
+                opacity -= fadeSpeed;
+                if (opacity <= 0) {
+                    cube.visible = false;
+                    cube.material.opacity = 1; // Reset for future use
+                    if (callback) callback();
+                } else {
+                    cube.material.transparent = true;
+                    cube.material.opacity = opacity;
+                    requestAnimationFrame(fade);
+                }
+            }
+            fade();
+        }
+
+        function hasSameColorNeighbor(x, z, color) {
+            const adj = [
+                { x: x - 1, z },
+                { x: x + 1, z },
+                { x, z: z - 1 },
+                { x, z: z + 1 }
+            ];
+            for (const { x: nx, z: nz } of adj) {
+                if (
+                    nx >= 0 && nx < gridSizeX &&
+                    nz >= 0 && nz < gridSizeZ &&
+                    cubeGrid[nx][nz] && cubeGrid[nx][nz].visible && cubeGrid[nx][nz].userData.color === color
+                ) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function removeAdjacent(x, z, color) {
+            if (!hasSameColorNeighbor(x, z, color)) return; // Don't remove if no neighbor of same color
+            const toHide = [{ x, z }];
+            const visited = Array.from({ length: gridSizeX }, () => Array(gridSizeZ).fill(false));
+            visited[x][z] = true;
+            while (toHide.length > 0) {
+                const { x: cx, z: cz } = toHide.pop();
+                const cube = cubeGrid[cx][cz];
+                if (cube && cube.visible && cube.userData.color === color) {
+                    fadeOutCube(cube);
+                    // Check adjacent
+                    const adj = [
+                        { x: cx - 1, z: cz },
+                        { x: cx + 1, z: cz },
+                        { x: cx, z: cz - 1 },
+                        { x: cx, z: cz + 1 }
+                    ];
+                    for (const { x: nx, z: nz } of adj) {
+                        if (
+                            nx >= 0 && nx < gridSizeX &&
+                            nz >= 0 && nz < gridSizeZ &&
+                            !visited[nx][nz]
+                        ) {
+                            visited[nx][nz] = true;
+                            if (cubeGrid[nx][nz] && cubeGrid[nx][nz].visible && cubeGrid[nx][nz].userData.color === color) {
+                                toHide.push({ x: nx, z: nz });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        function isNeighbor(cubeA, cubeB) {
+            const dx = Math.abs(cubeA.userData.x - cubeB.userData.x);
+            const dz = Math.abs(cubeA.userData.z - cubeB.userData.z);
+            return (dx === 1 && dz === 0) || (dx === 0 && dz === 1);
+        }
+
+        function onClick(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(elevatedCubes.filter(cube => cube.visible));
+            if (intersects.length > 0) {
+                const clickedCube = intersects[0].object;
+                if (!selectedCube) {
+                    selectedCube = clickedCube;
+                    highlightCube(clickedCube);
+                } else if (selectedCube !== clickedCube) {
+                    if (isNeighbor(selectedCube, clickedCube)) {
+                        // Swap positions
+                        const posA = selectedCube.position.clone();
+                        const posB = clickedCube.position.clone();
+                        selectedCube.position.copy(posB);
+                        clickedCube.position.copy(posA);
+                        // Swap grid references
+                        const temp = cubeGrid[selectedCube.userData.x][selectedCube.userData.z];
+                        cubeGrid[selectedCube.userData.x][selectedCube.userData.z] = cubeGrid[clickedCube.userData.x][clickedCube.userData.z];
+                        cubeGrid[clickedCube.userData.x][clickedCube.userData.z] = temp;
+                        // Swap userData positions
+                        const tempX = selectedCube.userData.x, tempZ = selectedCube.userData.z;
+                        selectedCube.userData.x = clickedCube.userData.x;
+                        selectedCube.userData.z = clickedCube.userData.z;
+                        clickedCube.userData.x = tempX;
+                        clickedCube.userData.z = tempZ;
+                        // Remove selection stroke
+                        removeStroke();
+                        // Remove adjacent cubes for both moved cubes
+                        removeAdjacent(selectedCube.userData.x, selectedCube.userData.z, selectedCube.userData.color);
+                        removeAdjacent(clickedCube.userData.x, clickedCube.userData.z, clickedCube.userData.color);
+                        selectedCube = null;
+                    } else {
+                        // Not a neighbor: select the new cube
+                        selectedCube = clickedCube;
+                        highlightCube(clickedCube);
+                    }
+                }
+            } else {
+                // Clicked outside, deselect
+                selectedCube = null;
+                removeStroke();
+            }
+        }
+        window.addEventListener('click', onClick);
+
+        // Camera rotation
+        let cameraAngle = Math.PI / 4; // 45 degrees
+        const cameraRadius = 28;
+        function updateCamera() {
+            camera.position.set(
+                Math.sin(cameraAngle) * cameraRadius,
+                20,
+                Math.cos(cameraAngle) * cameraRadius
+            );
+            camera.lookAt(0, 0, 0);
+        }
+        updateCamera();
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') {
+                cameraAngle -= Math.PI / 16;
+                updateCamera();
+            } else if (e.key === 'ArrowRight') {
+                cameraAngle += Math.PI / 16;
+                updateCamera();
+            }
+        });
+
+        // Responsive resize
+        window.addEventListener('resize', () => {
+            const aspect = window.innerWidth / window.innerHeight;
+            camera.left = -d * aspect;
+            camera.right = d * aspect;
+            camera.top = d;
+            camera.bottom = -d;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Render loop
+        function animate() {
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);
+        }
+        animate();
+    </script>
+</body>
+
+</html>
