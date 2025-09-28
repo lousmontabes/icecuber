@@ -259,6 +259,35 @@
             }
         });
 
+        // Touch controls for camera rotation
+        let touchStartX = null;
+        let touchActive = false;
+        window.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                touchStartX = e.touches[0].clientX;
+                touchActive = true;
+            }
+        });
+        window.addEventListener('touchmove', (e) => {
+            if (touchActive && e.touches.length === 1) {
+                const touchX = e.touches[0].clientX;
+                const deltaX = touchX - touchStartX;
+                if (Math.abs(deltaX) > 20) { // threshold for swipe
+                    if (deltaX > 0) {
+                        cameraAngle += Math.PI / 32;
+                    } else {
+                        cameraAngle -= Math.PI / 32;
+                    }
+                    updateCamera();
+                    touchStartX = touchX;
+                }
+            }
+        });
+        window.addEventListener('touchend', () => {
+            touchActive = false;
+            touchStartX = null;
+        });
+
         // Responsive resize
         window.addEventListener('resize', () => {
             const aspect = window.innerWidth / window.innerHeight;
