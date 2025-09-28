@@ -242,6 +242,13 @@
             const intersects = raycaster.intersectObjects(selectableCubes);
             if (intersects.length > 0) {
                 const clickedCube = intersects[0].object;
+                // If the selected block has a neighbor of the same color, remove the whole chunk
+                if (hasSameColorNeighbor(clickedCube.userData.x, clickedCube.userData.z, clickedCube.userData.color)) {
+                    removeAdjacent(clickedCube.userData.x, clickedCube.userData.z, clickedCube.userData.color);
+                    selectedCube = null;
+                    removeStroke();
+                    return;
+                }
                 if (!selectedCube) {
                     selectedCube = clickedCube;
                     highlightCube(clickedCube);
