@@ -339,9 +339,37 @@
         let cameraTargetZ = getFurthestRowWithEmpty();
         let cameraCurrentZ = cameraTargetZ;
 
+        // Add win text element
+        const winText = document.createElement('div');
+        winText.textContent = 'You won!';
+        winText.style.position = 'fixed';
+        winText.style.top = '50%';
+        winText.style.left = '50%';
+        winText.style.transform = 'translate(-50%, -50%)';
+        winText.style.fontSize = '3em';
+        winText.style.color = '#fff';
+        winText.style.textShadow = '0 2px 8px #00334d';
+        winText.style.fontFamily = 'Courier New, monospace';
+        winText.style.zIndex = '10';
+        winText.style.display = 'none';
+        document.body.appendChild(winText);
+
+        function checkWin() {
+            // Furthest row is gridSizeZ - 1
+            for (let x = 0; x < gridSizeX; x++) {
+                if (!cubeGrid[x][gridSizeZ - 1]) {
+                    winText.style.display = 'block';
+                    return true;
+                }
+            }
+            winText.style.display = 'none';
+            return false;
+        }
+
         function updateCamera() {
             // Center camera on furthest row with empty blocks
             cameraTargetZ = getFurthestRowWithEmpty();
+            checkWin();
         }
 
         // Render loop
