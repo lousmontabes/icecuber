@@ -48,8 +48,17 @@
         // Store elevated cubes for interaction
         const elevatedCubes = [];
         const cubeGrid = Array.from({ length: gridSizeX }, () => Array(gridSizeZ));
+        // Randomly select 3 indices to skip in the front row (z = 0)
+        const numMissing = 3;
+        const missingFrontIndices = [];
+        while (missingFrontIndices.length < numMissing) {
+            const idx = Math.floor(Math.random() * gridSizeX);
+            if (!missingFrontIndices.includes(idx)) missingFrontIndices.push(idx);
+        }
         for (let x = 0; x < gridSizeX; x++) {
             for (let z = 0; z < gridSizeZ; z++) {
+                // Skip random elevated cubes in the front row (z = 0)
+                if (z === 0 && missingFrontIndices.includes(x)) continue;
                 const geometry = new THREE.BoxGeometry(cellSize, cellSize, cellSize);
                 const color = colors[Math.floor(Math.random() * colors.length)];
                 // Use MeshPhongMaterial for proper opacity fading
@@ -67,14 +76,21 @@
             }
         }
 
-        // Add a shadow-receiving ground plane
-        const groundGeometry = new THREE.PlaneGeometry(gridSizeX * cellSize, gridSizeZ * cellSize);
-        const groundMaterial = new THREE.MeshPhongMaterial({ color: 0x888888, side: THREE.DoubleSide }); // grey
-        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-        ground.rotation.x = -Math.PI / 2;
-        ground.position.y = 0;
-        ground.receiveShadow = true;
-        scene.add(ground);
+        // Add ground blocks with same height as cubes (no missing blocks)
+        for (let x = 0; x < gridSizeX; x++) {
+            for (let z = 0; z < gridSizeZ; z++) {
+                const groundGeometry = new THREE.BoxGeometry(cellSize, cellSize, cellSize);
+                const groundMaterial = new THREE.MeshPhongMaterial({ color: 0x00334d, side: THREE.DoubleSide }); // deep icey blue
+                const groundCube = new THREE.Mesh(groundGeometry, groundMaterial);
+                groundCube.position.set(
+                    (x - gridSizeX / 2 + 0.5) * cellSize,
+                    cellSize / 2, // base level
+                    (z - gridSizeZ / 2 + 0.5) * cellSize
+                );
+                groundCube.receiveShadow = true;
+                scene.add(groundCube);
+            }
+        }
 
         // Lighting
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
@@ -121,6 +137,8 @@
                 if (opacity <= 0) {
                     cube.visible = false;
                     cube.material.opacity = 1; // Reset for future use
+                    // Remove from cubeGrid so selectability updates
+                    cubeGrid[cube.userData.x][cube.userData.z] = undefined;
                     if (callback) callback();
                 } else {
                     cube.material.transparent = true;
@@ -189,17 +207,40 @@
             return (dx === 1 && dz === 0) || (dx === 0 && dz === 1);
         }
 
+        function isSelectable(x, z) {
+            // Check if any adjacent cell is empty (no cube)
+            const adj = [
+                { x: x - 1, z },
+                { x: x + 1, z },
+                { x, z: z - 1 },
+                { x, z: z + 1 }
+            ];
+            for (const { x: nx, z: nz } of adj) {
+                if (
+                    nx >= 0 && nx < gridSizeX &&
+                    nz >= 0 && nz < gridSizeZ &&
+                    !cubeGrid[nx][nz] // empty space
+                ) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         function onClick(event) {
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
             raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects(elevatedCubes.filter(cube => cube.visible));
+            // Only allow selection of cubes next to an empty space
+            const selectableCubes = elevatedCubes.filter(cube => cube.visible && isSelectable(cube.userData.x, cube.userData.z));
+            const intersects = raycaster.intersectObjects(selectableCubes);
             if (intersects.length > 0) {
                 const clickedCube = intersects[0].object;
                 if (!selectedCube) {
                     selectedCube = clickedCube;
                     highlightCube(clickedCube);
                 } else if (selectedCube !== clickedCube) {
+                    // Allow swap with any neighbor, not just selectable ones
                     if (isNeighbor(selectedCube, clickedCube)) {
                         // Swap positions
                         const posA = selectedCube.position.clone();
@@ -237,7 +278,7 @@
         window.addEventListener('click', onClick);
 
         // Touch interaction for selecting/swapping cubes
-        window.addEventListener('touchend', function(e) {
+        window.addEventListener('touchend', function (e) {
             if (e.changedTouches && e.changedTouches.length === 1) {
                 const touch = e.changedTouches[0];
                 // Simulate a click event at the touch location
