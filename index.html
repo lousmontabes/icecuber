@@ -533,7 +533,7 @@
 
         function updateCamera() {
             // Center camera on furthest row with empty blocks
-            cameraTargetZ = getFurthestRowWithEmpty();
+            cameraTargetZ = Math.max(cameraTargetZ, getFurthestRowWithEmpty());
             checkWin();
         }
 
