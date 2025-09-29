@@ -483,9 +483,10 @@
 
         // Camera rotation
         let cameraAngle;
+        let cameraTargetAngle;
         const cameraRadius = 28;
         // Set default rotation to a pleasing angle (e.g., 45 degrees)
-        cameraAngle = 9 * Math.PI / 10; // ~162 degrees
+        cameraAngle = cameraTargetAngle = 9 * Math.PI / 10; // ~162 degrees
 
         function getFurthestRowWithEmpty() {
             // Find the furthest z (highest z) with at least one empty block
@@ -639,6 +640,8 @@
         function animate() {
             // Smoothly interpolate cameraCurrentZ toward cameraTargetZ
             cameraCurrentZ += (cameraTargetZ - cameraCurrentZ) * 0.1;
+            // Smoothly interpolate cameraAngle toward cameraTargetAngle
+            cameraAngle += (cameraTargetAngle - cameraAngle) * 0.1;
             camera.position.set(
                 Math.sin(cameraAngle) * cameraRadius,
                 20,
@@ -655,9 +658,9 @@
 
         window.addEventListener('keydown', (e) => {
             if (e.key === 'ArrowLeft') {
-                cameraAngle -= Math.PI / 16;
+                cameraTargetAngle -= Math.PI / 16;
             } else if (e.key === 'ArrowRight') {
-                cameraAngle += Math.PI / 16;
+                cameraTargetAngle += Math.PI / 16;
             } else if (e.key === 'ArrowUp') {
                 cameraTargetZ = Math.min(cameraTargetZ + 1, gridSizeZ - 1);
             } else if (e.key === 'ArrowDown') {
@@ -685,11 +688,10 @@
                 // Horizontal swipe for camera rotation
                 if (Math.abs(deltaX) > 20 && Math.abs(deltaX) > Math.abs(deltaY)) {
                     if (deltaX < 0) {
-                        cameraAngle += Math.PI / 32;
+                        cameraTargetAngle += Math.PI / 32;
                     } else {
-                        cameraAngle -= Math.PI / 32;
+                        cameraTargetAngle -= Math.PI / 32;
                     }
-                    updateCamera();
                     touchStartX = touchX;
                     touchStartY = touchY;
                 }
