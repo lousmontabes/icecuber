@@ -48,8 +48,8 @@
         const gridSizeX = 10;
         const gridSizeZ = 20;
         const cellSize = 2;
-        // Five icy blue shades
-        const colors = [0xb3e6ff, 0x99d6ea, 0x80c6d4, 0x66b6bf, 0x4da6aa];
+        // Five icy blue shades + brown
+        const colors = [0xb3e6ff, 0x99d6ea, 0x80c6d4, 0x66b6bf, 0x4da6aa, 0x8B5A2B]; // brown added
 
         // Store elevated cubes for interaction
         const elevatedCubes = [];
@@ -67,8 +67,9 @@
                 if (z === 0 && missingFrontIndices.includes(x)) continue;
                 const geometry = new THREE.BoxGeometry(cellSize, cellSize, cellSize);
                 const color = colors[Math.floor(Math.random() * colors.length)];
-                // Use MeshPhongMaterial for proper opacity fading
-                const material = new THREE.MeshPhongMaterial({ color, transparent: true, opacity: 1 });
+                // Set semi-transparent for blue, opaque for brown
+                const isBrown = color === 0x8B5A2B;
+                const material = new THREE.MeshPhongMaterial({ color, transparent: true, opacity: isBrown ? 1 : 0.85 });
                 const cube = new THREE.Mesh(geometry, material);
                 cube.position.set(
                     (x - gridSizeX / 2 + 0.5) * cellSize,
@@ -136,6 +137,8 @@
         }
 
         function fadeOutCube(cube, callback) {
+            // Prevent brown blocks from being removed
+            if (cube.userData.color === 0x8B5A2B) return;
             let opacity = cube.material.opacity;
             let y = cube.position.y;
             const fadeSpeed = 0.05;
@@ -151,6 +154,7 @@
                     // Remove from cubeGrid so selectability updates
                     cubeGrid[cube.userData.x][cube.userData.z] = undefined;
                     updateCamera(); // Update camera position in real time
+                    updateMoveStatus();
                     if (callback) callback();
                 } else {
                     cube.material.transparent = true;
@@ -220,6 +224,8 @@
         }
 
         function isSelectable(x, z) {
+            // Brown blocks are never selectable
+            if (cubeGrid[x][z] && cubeGrid[x][z].userData.color === 0x8B5A2B) return false;
             // Check if any adjacent cell is empty (no cube)
             const adj = [
                 { x: x - 1, z },
@@ -239,15 +245,33 @@
             return false;
         }
 
+        // Add UI for available moves
+        const moveStatus = document.createElement('div');
+        moveStatus.style.position = 'fixed';
+        moveStatus.style.top = '20px';
+        moveStatus.style.left = '50%';
+        moveStatus.style.transform = 'translateX(-50%)';
+        moveStatus.style.fontSize = '2em';
+        moveStatus.style.color = '#fff';
+        moveStatus.style.textShadow = '0 2px 8px #00334d';
+        moveStatus.style.fontFamily = 'Arial, sans-serif';
+        moveStatus.style.zIndex = '10';
+        // document.body.appendChild(moveStatus);
+        function updateMoveStatus() {
+            moveStatus.textContent = hasAvailableMove() ? 'Moves available' : 'No moves left';
+        }
+
         function onClick(event) {
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
             raycaster.setFromCamera(mouse, camera);
-            // Only allow selection of cubes next to an empty space
+            // Only allow selection of cubes next to an empty space and not brown
             const selectableCubes = elevatedCubes.filter(cube => cube.visible && isSelectable(cube.userData.x, cube.userData.z));
             const intersects = raycaster.intersectObjects(selectableCubes);
             if (intersects.length > 0) {
                 const clickedCube = intersects[0].object;
+                // Prevent interaction with brown blocks
+                if (clickedCube.userData.color === 0x8B5A2B) return;
                 // If the selected block has a neighbor of the same color, remove the whole chunk
                 if (hasSameColorNeighbor(clickedCube.userData.x, clickedCube.userData.z, clickedCube.userData.color)) {
                     removeAdjacent(clickedCube.userData.x, clickedCube.userData.z, clickedCube.userData.color);
@@ -259,29 +283,27 @@
                     selectedCube = clickedCube;
                     highlightCube(clickedCube);
                 } else if (selectedCube !== clickedCube) {
-                    // Allow swap with any neighbor, not just selectable ones
                     if (isNeighbor(selectedCube, clickedCube)) {
-                        // Swap positions
-                        const posA = selectedCube.position.clone();
-                        const posB = clickedCube.position.clone();
-                        selectedCube.position.copy(posB);
-                        clickedCube.position.copy(posA);
-                        // Swap grid references
-                        const temp = cubeGrid[selectedCube.userData.x][selectedCube.userData.z];
-                        cubeGrid[selectedCube.userData.x][selectedCube.userData.z] = cubeGrid[clickedCube.userData.x][clickedCube.userData.z];
-                        cubeGrid[clickedCube.userData.x][clickedCube.userData.z] = temp;
-                        // Swap userData positions
-                        const tempX = selectedCube.userData.x, tempZ = selectedCube.userData.z;
-                        selectedCube.userData.x = clickedCube.userData.x;
-                        selectedCube.userData.z = clickedCube.userData.z;
-                        clickedCube.userData.x = tempX;
-                        clickedCube.userData.z = tempZ;
-                        // Remove selection stroke
+                        // Remove selection stroke before animating swap
                         removeStroke();
-                        // Remove adjacent cubes for both moved cubes
-                        removeAdjacent(selectedCube.userData.x, selectedCube.userData.z, selectedCube.userData.color);
-                        removeAdjacent(clickedCube.userData.x, clickedCube.userData.z, clickedCube.userData.color);
-                        selectedCube = null;
+                        // Animate swap, then swap logic and removal
+                        animateSwap(selectedCube, clickedCube, () => {
+                            // Swap grid references
+                            const temp = cubeGrid[selectedCube.userData.x][selectedCube.userData.z];
+                            cubeGrid[selectedCube.userData.x][selectedCube.userData.z] = cubeGrid[clickedCube.userData.x][clickedCube.userData.z];
+                            cubeGrid[clickedCube.userData.x][clickedCube.userData.z] = temp;
+                            // Swap userData positions
+                            const tempX = selectedCube.userData.x, tempZ = selectedCube.userData.z;
+                            selectedCube.userData.x = clickedCube.userData.x;
+                            selectedCube.userData.z = clickedCube.userData.z;
+                            clickedCube.userData.x = tempX;
+                            clickedCube.userData.z = tempZ;
+                            // Remove adjacent cubes for both moved cubes
+                            removeAdjacent(selectedCube.userData.x, selectedCube.userData.z, selectedCube.userData.color);
+                            removeAdjacent(clickedCube.userData.x, clickedCube.userData.z, clickedCube.userData.color);
+                            selectedCube = null;
+                            updateMoveStatus();
+                        });
                     } else {
                         // Not a neighbor: select the new cube
                         selectedCube = clickedCube;
@@ -293,6 +315,7 @@
                 selectedCube = null;
                 removeStroke();
             }
+            updateMoveStatus();
         }
         window.addEventListener('click', onClick);
 
@@ -349,7 +372,7 @@
         winText.style.fontSize = '3em';
         winText.style.color = '#fff';
         winText.style.textShadow = '0 2px 8px #00334d';
-        winText.style.fontFamily = 'Courier New, monospace';
+        winText.style.fontFamily = '"Press Start 2P", "VT323", "Courier New", monospace';
         winText.style.zIndex = '10';
         winText.style.display = 'none';
         document.body.appendChild(winText);
@@ -372,6 +395,77 @@
             checkWin();
         }
 
+        function hasAvailableMove() {
+            // Check for any selectable cube that can be removed (has same color neighbor)
+            for (let x = 0; x < gridSizeX; x++) {
+                for (let z = 0; z < gridSizeZ; z++) {
+                    const cube = cubeGrid[x][z];
+                    if (
+                        cube && cube.visible &&
+                        isSelectable(x, z) &&
+                        cube.userData.color !== 0x8B5A2B &&
+                        hasSameColorNeighbor(x, z, cube.userData.color)
+                    ) {
+                        return true;
+                    }
+                }
+            }
+            // Check for any possible swap between neighbors that would create a removable chunk
+            for (let x = 0; x < gridSizeX; x++) {
+                for (let z = 0; z < gridSizeZ; z++) {
+                    const cubeA = cubeGrid[x][z];
+                    if (!cubeA || !cubeA.visible || cubeA.userData.color === 0x8B5A2B) continue;
+                    const neighbors = [
+                        [x - 1, z], [x + 1, z], [x, z - 1], [x, z + 1]
+                    ];
+                    for (const [nx, nz] of neighbors) {
+                        if (
+                            nx >= 0 && nx < gridSizeX &&
+                            nz >= 0 && nz < gridSizeZ
+                        ) {
+                            const cubeB = cubeGrid[nx][nz];
+                            if (!cubeB || !cubeB.visible || cubeB.userData.color === 0x8B5A2B) continue;
+                            // Simulate swap
+                            const colorA = cubeA.userData.color;
+                            const colorB = cubeB.userData.color;
+                            // After swap, would either cube be removable?
+                            if (
+                                hasSameColorNeighbor(nx, nz, colorA) ||
+                                hasSameColorNeighbor(x, z, colorB)
+                            ) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        // Animation for swapping two cubes
+        function animateSwap(cubeA, cubeB, onComplete) {
+            const startA = cubeA.position.clone();
+            const startB = cubeB.position.clone();
+            const endA = startB.clone();
+            const endB = startA.clone();
+            const duration = 300; // ms
+            const startTime = performance.now();
+            function animate() {
+                const now = performance.now();
+                const t = Math.min((now - startTime) / duration, 1);
+                cubeA.position.lerpVectors(startA, endA, t);
+                cubeB.position.lerpVectors(startB, endB, t);
+                if (t < 1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    cubeA.position.copy(endA);
+                    cubeB.position.copy(endB);
+                    if (onComplete) onComplete();
+                }
+            }
+            animate();
+        }
+
         // Render loop
         function animate() {
             // Smoothly interpolate cameraCurrentZ toward cameraTargetZ
@@ -383,6 +477,7 @@
             );
             camera.lookAt(0, 0, (cameraCurrentZ - gridSizeZ / 2) * cellSize);
             renderer.render(scene, camera);
+            updateMoveStatus();
             requestAnimationFrame(animate);
         }
         animate();
