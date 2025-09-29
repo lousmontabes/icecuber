@@ -35,7 +35,7 @@
         const camera = new THREE.OrthographicCamera(
             -d * aspect, d * aspect, d, -d, 1, 1000
         );
-        camera.position.set(20, 20, 20); // 45 degree angle
+        camera.position.set(20, 20, 20);
         camera.lookAt(0, 0, 0);
 
         // Renderer
@@ -48,8 +48,15 @@
         const gridSizeX = 10;
         const gridSizeZ = 20;
         const cellSize = 2;
-        // Five icy blue shades + brown
-        const colors = [0xb3e6ff, 0x99d6ea, 0x80c6d4, 0x66b6bf, 0x4da6aa, 0x8B5A2B]; // brown added
+        // Five pastel colors + brown
+        const colors = [
+            0xffb3ba, // pastel pink
+            0xbaffc9, // pastel green
+            0xffffba, // pastel yellow
+            0xbae1ff, // pastel blue
+            0xe2baff, // pastel purple
+            0x8B5A2B  // brown
+        ];
 
         // Store elevated cubes for interaction
         const elevatedCubes = [];
@@ -61,6 +68,27 @@
             const idx = Math.floor(Math.random() * gridSizeX);
             if (!missingFrontIndices.includes(idx)) missingFrontIndices.push(idx);
         }
+
+        let selectableOutline = null;
+
+        // Debug HUD for camera info
+        const debugHud = document.createElement('div');
+        debugHud.style.position = 'fixed';
+        debugHud.style.bottom = '20px';
+        debugHud.style.left = '20px';
+        debugHud.style.background = 'rgba(0,0,0,0.6)';
+        debugHud.style.color = '#fff';
+        debugHud.style.fontFamily = 'monospace';
+        debugHud.style.fontSize = '1.2em';
+        debugHud.style.padding = '8px 16px';
+        debugHud.style.borderRadius = '8px';
+        debugHud.style.zIndex = '100';
+        document.body.appendChild(debugHud);
+        function updateDebugHud() {
+            debugHud.textContent = `cameraTargetZ: ${cameraTargetZ.toFixed(2)}\ncameraAngle: ${(cameraAngle * 180 / Math.PI).toFixed(1)}°`;
+        }
+        // --- Regular block addition commented out ---
+        /*
         for (let x = 0; x < gridSizeX; x++) {
             for (let z = 0; z < gridSizeZ; z++) {
                 // Skip random elevated cubes in the front row (z = 0)
@@ -69,7 +97,126 @@
                 const color = colors[Math.floor(Math.random() * colors.length)];
                 // Set semi-transparent for blue, opaque for brown
                 const isBrown = color === 0x8B5A2B;
-                const material = new THREE.MeshPhongMaterial({ color, transparent: true, opacity: isBrown ? 1 : 0.85 });
+                const material = new THREE.MeshPhongMaterial({ color, transparent: true, opacity: isBrown ? 1 : 0.95 });
+                const cube = new THREE.Mesh(geometry, material);
+                cube.position.set(
+                    (x - gridSizeX / 2 + 0.5) * cellSize,
+                    cellSize * 1.5,
+                    (z - gridSizeZ / 2 + 0.5) * cellSize
+                );
+                cube.userData = { x, z, color };
+                scene.add(cube);
+                elevatedCubes.push(cube);
+                cubeGrid[x][z] = cube;
+            }
+        }
+        */
+        // --- Only place blocks for the solvable path below ---
+        // Generate a complex solution path with multi-swap and branching
+        function generateSolvableHorizontalPath(N = 2, difficulty = 0.3) {
+            // difficulty = 0..1 → chance of adding "forced swap" or "detour" events
+            const path = [];
+            const blueColors = colors.slice(0, 5);
+            let prevXs = null;
+
+            for (let z = 0; z < gridSizeZ; z++) {
+                // Pick two colors for this row
+                const colorA = blueColors[Math.floor(Math.random() * blueColors.length)];
+                let colorB = blueColors[Math.floor(Math.random() * blueColors.length)];
+                while (colorB === colorA) {
+                    colorB = blueColors[Math.floor(Math.random() * blueColors.length)];
+                }
+
+                let startX;
+                if (prevXs) {
+                    // Pick a connection point from previous row
+                    const connectX = prevXs[Math.floor(Math.random() * prevXs.length)];
+
+                    // Zigzag chance: sometimes shift the path left/right to force swaps later
+                    let offset = 0;
+                    if (Math.random() < difficulty) {
+                        offset = (Math.random() < 0.5 ? -1 : 1); // shift left or right
+                    }
+                    startX = Math.max(0, Math.min(connectX - Math.floor(N / 2) + offset, gridSizeX - N));
+                } else {
+                    startX = Math.floor(Math.random() * (gridSizeX - N + 1));
+                }
+
+                const xs = [];
+                for (let i = 0; i < N; i++) {
+                    xs.push(startX + i);
+
+                    // Force-swap mechanic: sometimes put a mismatched color that requires a later swap
+                    let chosenColor;
+                    if (Math.random() < difficulty && i === 0 && z > 0) {
+                        // Place a "wrong" color at the first slot to break the pair
+                        const wrongColors = blueColors.filter(c => c !== colorA && c !== colorB);
+                        chosenColor = wrongColors[Math.floor(Math.random() * wrongColors.length)];
+                    } else {
+                        chosenColor = (i % 2 === 0 ? colorA : colorB);
+                    }
+
+                    path.push({ x: startX + i, z, color: chosenColor });
+                }
+
+                prevXs = xs;
+            }
+
+            // Sprinkle some obstacles near the path (but not on it)
+            const obstacleChance = 0.15;
+            for (let i = 0; i < path.length; i++) {
+                const { x, z } = path[i];
+                // Look at neighbors of the path
+                const neighbors = [
+                    { nx: x - 1, nz: z },
+                    { nx: x + 1, nz: z },
+                ];
+                neighbors.forEach(({ nx, nz }) => {
+                    if (nx >= 0 && nx < gridSizeX && Math.random() < obstacleChance) {
+                        // Ensure we don't overwrite the path
+                        if (!path.some(p => p.x === nx && p.z === nz)) {
+                            path.push({ x: nx, z: nz, color: 0x8B5A2B }); // brown obstacle
+                        }
+                    }
+                });
+            }
+
+            return path;
+        }
+
+        const path = generateSolvableHorizontalPath();
+        const pathSet = new Set(path.map(p => `${p.x},${p.z}`));
+        for (const { x, z, color } of path) {
+            const geometry = new THREE.BoxGeometry(cellSize, cellSize, cellSize);
+            const material = new THREE.MeshPhongMaterial({ color, transparent: true, opacity: 0.95 });
+            const cube = new THREE.Mesh(geometry, material);
+            cube.position.set(
+                (x - gridSizeX / 2 + 0.5) * cellSize,
+                cellSize * 1.5,
+                (z - gridSizeZ / 2 + 0.5) * cellSize
+            );
+            cube.userData = { x, z, color };
+            scene.add(cube);
+            elevatedCubes.push(cube);
+            cubeGrid[x][z] = cube;
+            // Highlight path cubes with wireframe
+            const wireframe = new THREE.LineSegments(
+                new THREE.EdgesGeometry(geometry),
+                new THREE.LineBasicMaterial({ color: 0x00ffcc, linewidth: 2 })
+            );
+            wireframe.position.copy(cube.position);
+            wireframe.position.y += 0.02; // Slightly above the cube
+            // scene.add(wireframe);
+        }
+        // Fill the rest of the grid with random blocks(blue or brown), skipping path blocks
+        for (let x = 0; x < gridSizeX; x++) {
+            for (let z = 0; z < gridSizeZ; z++) {
+                if (pathSet.has(`${x},${z}`)) continue;
+                // Randomly choose blue or brown
+                const color = colors[Math.floor(Math.random() * colors.length)];
+                const geometry = new THREE.BoxGeometry(cellSize, cellSize, cellSize);
+                const isBrown = color === 0x8B5A2B;
+                const material = new THREE.MeshPhongMaterial({ color, transparent: true, opacity: isBrown ? 1 : 0.95 });
                 const cube = new THREE.Mesh(geometry, material);
                 cube.position.set(
                     (x - gridSizeX / 2 + 0.5) * cellSize,
@@ -226,6 +373,8 @@
         function isSelectable(x, z) {
             // Brown blocks are never selectable
             if (cubeGrid[x][z] && cubeGrid[x][z].userData.color === 0x8B5A2B) return false;
+            // Make z=0 blocks always selectable
+            if (z === 0) return true;
             // Check if any adjacent cell is empty (no cube)
             const adj = [
                 { x: x - 1, z },
@@ -335,17 +484,9 @@
         // Camera rotation
         let cameraAngle;
         const cameraRadius = 28;
-        // Set default rotation to look toward the row with initially empty blocks
-        const initialEmptyRow = (() => {
-            for (let z = gridSizeZ - 1; z >= 0; z--) {
-                for (let x = 0; x < gridSizeX; x++) {
-                    if (!cubeGrid[x][z]) return z;
-                }
-            }
-            return Math.floor(gridSizeZ / 2);
-        })();
-        // Calculate angle so camera looks toward the initial empty row, with a slight angle to the left
-        cameraAngle = Math.atan2(0, (initialEmptyRow - gridSizeZ / 2) * cellSize + 1) - Math.PI / 12;
+        // Set default rotation to a pleasing angle (e.g., 45 degrees)
+        cameraAngle = 9 * Math.PI / 10; // ~162 degrees
+
         function getFurthestRowWithEmpty() {
             // Find the furthest z (highest z) with at least one empty block
             for (let z = gridSizeZ - 1; z >= 0; z--) {
@@ -359,7 +500,7 @@
         }
 
         // Camera smooth movement state
-        let cameraTargetZ = getFurthestRowWithEmpty();
+        let cameraTargetZ = 0; // Start focused on front row (z=0)
         let cameraCurrentZ = cameraTargetZ;
 
         // Add win text element
@@ -466,6 +607,34 @@
             animate();
         }
 
+        let selectableClonesGroup = null;
+
+        function updateSelectableClones() {
+            // Remove previous group
+            if (selectableClonesGroup) {
+                scene.remove(selectableClonesGroup);
+                selectableClonesGroup = null;
+            }
+            selectableClonesGroup = new THREE.Group();
+            for (let x = 0; x < gridSizeX; x++) {
+                for (let z = 0; z < gridSizeZ; z++) {
+                    const cube = cubeGrid[x][z];
+                    if (cube && cube.visible && isSelectable(x, z)) {
+                        // Clone geometry and material
+                        const clone = new THREE.Mesh(
+                            cube.geometry.clone(),
+                            new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: false })
+                        );
+                        clone.position.copy(cube.position);
+                        clone.position.y += 2; // Slightly above original
+                        clone.renderOrder = 1001;
+                        selectableClonesGroup.add(clone);
+                    }
+                }
+            }
+            // scene.add(selectableClonesGroup);
+        }
+
         // Render loop
         function animate() {
             // Smoothly interpolate cameraCurrentZ toward cameraTargetZ
@@ -476,6 +645,8 @@
                 Math.cos(cameraAngle) * cameraRadius + (cameraCurrentZ - gridSizeZ / 2) * cellSize
             );
             camera.lookAt(0, 0, (cameraCurrentZ - gridSizeZ / 2) * cellSize);
+            updateDebugHud();
+            updateSelectableClones();
             renderer.render(scene, camera);
             updateMoveStatus();
             requestAnimationFrame(animate);
@@ -485,10 +656,12 @@
         window.addEventListener('keydown', (e) => {
             if (e.key === 'ArrowLeft') {
                 cameraAngle -= Math.PI / 16;
-                updateCamera();
             } else if (e.key === 'ArrowRight') {
                 cameraAngle += Math.PI / 16;
-                updateCamera();
+            } else if (e.key === 'ArrowUp') {
+                cameraTargetZ = Math.min(cameraTargetZ + 1, gridSizeZ - 1);
+            } else if (e.key === 'ArrowDown') {
+                cameraTargetZ = Math.max(cameraTargetZ - 1, 0);
             }
         });
 
