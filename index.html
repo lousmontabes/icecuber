@@ -667,18 +667,23 @@
 
         // Touch controls for camera rotation
         let touchStartX = null;
+        let touchStartY = null;
         let touchActive = false;
         window.addEventListener('touchstart', (e) => {
             if (e.touches.length === 1) {
                 touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
                 touchActive = true;
             }
         });
         window.addEventListener('touchmove', (e) => {
             if (touchActive && e.touches.length === 1) {
                 const touchX = e.touches[0].clientX;
+                const touchY = e.touches[0].clientY;
                 const deltaX = touchX - touchStartX;
-                if (Math.abs(deltaX) > 20) { // threshold for swipe
+                const deltaY = touchY - touchStartY;
+                // Horizontal swipe for camera rotation
+                if (Math.abs(deltaX) > 20 && Math.abs(deltaX) > Math.abs(deltaY)) {
                     if (deltaX < 0) {
                         cameraAngle += Math.PI / 32;
                     } else {
@@ -686,12 +691,25 @@
                     }
                     updateCamera();
                     touchStartX = touchX;
+                    touchStartY = touchY;
+                }
+                // Vertical swipe for cameraTargetZ
+                if (Math.abs(deltaY) > 10 && Math.abs(deltaY) > Math.abs(deltaX)) {
+                    // Sliding up: decrease cameraTargetZ
+                    if (deltaY < 0) {
+                        cameraTargetZ = Math.max(cameraTargetZ - 0.2, 0);
+                    } else {
+                        cameraTargetZ = Math.min(cameraTargetZ + 0.2, gridSizeZ - 1);
+                    }
+                    touchStartX = touchX;
+                    touchStartY = touchY;
                 }
             }
         });
         window.addEventListener('touchend', () => {
             touchActive = false;
             touchStartX = null;
+            touchStartY = null;
         });
 
         // Responsive resize
